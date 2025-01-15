@@ -58,7 +58,7 @@ def render_video(source_path, model_path, iteration, views, gaussians, pipeline,
 
 
     render_poses = []
-    folder_path = os.path.join(source_path,'npz-v4')
+    folder_path = os.path.join(source_path,'trajectory')
 
     size = (view.original_image.shape[2], view.original_image.shape[1])
     fourcc = cv2.VideoWriter_fourcc(*'XVID')

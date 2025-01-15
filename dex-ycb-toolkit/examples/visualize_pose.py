@@ -62,7 +62,7 @@ def create_scene(sample, obj_file):
   o=sample['ycb_grasp_ind']
   if np.all(pose_y[o] != 0.0):
     pose = np.vstack((pose_y[o], np.array([[0, 0, 0, 1]], dtype=np.float32)))
-    print(f'{pose} \n')
+    # print(f'{pose} \n')
     # pose[1] *= -1
     # pose[2] *= -1
     node = scene.add(mesh_y[o], name = 'object', pose=pose)
@@ -212,9 +212,9 @@ def main():
   combined_trimesh.export(os.path.join(args.src,'handover_3D','handover.ply'))
   hand_trimesh.export(os.path.join(args.src,'handover_3D','hand.ply'))
   object_trimesh.export(os.path.join(args.src,'handover_3D','object.ply'))
-  print('transform scene object to .ply object successfully')
+  # print('transform scene object to .ply object successfully')
 
-  print('Visualizing pose in camera view using pyrender renderer')
+  # print('Visualizing pose in camera view using pyrender renderer')
 
   r = pyrender.OffscreenRenderer(viewport_width=dataset.w,
                                  viewport_height=dataset.h)
@@ -227,7 +227,7 @@ def main():
   im = 0.33 * im_real.astype(np.float32) + 0.67 * im_render.astype(np.float32)
   im = im.astype(np.uint8)
 
-  print('Close the window to continue.')
+  # print('Close the window to continue.')
 
   plt.imshow(im)
   plt.tight_layout()
