@@ -1,3 +1,5 @@
+# multiprocess for dataset like /home/e/eez095/dexycb_data/20200813-subject-02
+# have error.txt and complete.txt
 import subprocess
 import os
 import re
