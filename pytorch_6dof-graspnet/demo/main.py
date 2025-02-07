@@ -47,7 +47,7 @@ def getSafeGrasps(grasps, scores, pc_h):
     filtered_grasps = np.array(filtered_grasps)
     filtered_scores = np.array(filtered_scores)
 
-    print("Removed {} grasps out of {}".format(grasps.shape[0] - filtered_grasps.shape[0], grasps.shape[0]))
+    # print("Removed {} grasps out of {}".format(grasps.shape[0] - filtered_grasps.shape[0], grasps.shape[0]))
     return filtered_grasps, filtered_scores
 
 def make_parser():
@@ -183,7 +183,7 @@ def main(args):
             draw_scene(data["pc"][0],
                        grasps=generated_grasps,
                        grasp_scores=generated_scores)
-            print('close the window to continue to next object . . .')
+            # print('close the window to continue to next object . . .')
             mlab.show()
     else:
         # for folder in os.listdir(args.safe_grasp_folder): 
@@ -238,7 +238,7 @@ def main(args):
         generated_grasps = np.array(generated_grasps)
         generated_scores = np.array(generated_scores)
 
-        print("Generated grasps: ", generated_grasps.shape)
+        # print("Generated grasps: ", generated_grasps.shape)
         
         if generated_grasps.shape[0] == 0:
             print("No grasps generated")
@@ -253,10 +253,10 @@ def main(args):
 
         sorted_scores = np.sort(filtered_scores)[::-1]  # Sort in descending order
         # Step 2: Check if there are at least three unique scores
-        if len(sorted_scores) < 3:
-            print("Not enough unique scores to find the third largest.")
-        else:
-            third_largest_score = sorted_scores[2]  # Get the third largest score
+        # if len(sorted_scores) < 3:
+        #     print("Not enough unique scores to find the third largest.")
+        # else:
+        #     third_largest_score = sorted_scores[2]  # Get the third largest score
         # third_largese_index = np.where(filtered_scores == third_largest_score)[0][0]
         # third_largese_grasp = filtered_grasps[third_largese_index]
         # third_largese_grasp_w = third_largese_grasp.copy()
@@ -264,8 +264,8 @@ def main(args):
         max_score_index = np.argmax(filtered_scores)
         max_score = filtered_scores[max_score_index]
         best_grasp = filtered_grasps[max_score_index]
-        print("pointcloud mean:\n", mean )
-        print("best grasp in world coordinate:\n", best_grasp)
+        # print("pointcloud mean:\n", mean )
+        # print("best grasp in world coordinate:\n", best_grasp)
         print("best score:", max_score)
         np.save(f'{os.path.join(args.safe_grasp_folder)}/gpw.npy', best_grasp)
     
@@ -279,6 +279,7 @@ def main(args):
         #     grasps=filtered_grasps,
         #     grasp_scores=filtered_scores,
         # )
+        # mlab.savefig('grasp.png')
         
         # print('close the window to continue to next object . . .')
         # mlab.show()

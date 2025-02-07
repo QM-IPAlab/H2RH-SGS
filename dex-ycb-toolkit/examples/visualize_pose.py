@@ -1,6 +1,7 @@
 # DexYCB Toolkit
 # Copyright (C) 2021 NVIDIA Corporation
 # Licensed under the GNU General Public License v3.0 [see LICENSE for details]
+# use master camera as label
 
 """Example of visualizing object and hand pose of one image sample."""
 import os
@@ -55,6 +56,7 @@ def create_scene(sample, obj_file):
     mesh_y.append(mesh)
 
   #grasp object
+
   ycb_class = sample['ycb_ids'][sample['ycb_grasp_ind']]
 
   # Add YCB meshes.
@@ -113,6 +115,7 @@ def kk_load_data(src):
   with open(meta_file, 'r') as f:
     meta = yaml.load(f, Loader=yaml.FullLoader)
   _serials = meta['serials'] #每个相机是一个文件夹 
+  extrinsic= meta['extrinsics']
   _h = 480
   _w = 640
   _ycb_ids = meta['ycb_ids']
@@ -121,11 +124,18 @@ def kk_load_data(src):
   _color_format = "color_{:06d}.jpg"
   _depth_format = "aligned_depth_to_color_{:06d}.png"
   _label_format = "labels_{:06d}.npz"
+
+  # extrinsic
+  extr_file = _data_dir + "/calibration/" + "extrinsics_" + extrinsic +"/extrinsics.yml"
+  with open(extr_file, 'r') as f_ex:
+    extr = yaml.load(f_ex, Loader=yaml.FullLoader)
+  master_seris = extr['master']
   
   # intrincs
   # _serials[seris_num] = '840412060917'
-  seris_num = 0
-  intr_file = _data_dir + "/calibration/intrinsics/" + _serials[seris_num] + '_' + str(
+  # seris_num = 0
+  # intr_file = _data_dir + "/calibration/intrinsics/" + _serials[seris_num] + '_' + str(
+  intr_file = _data_dir + "/calibration/intrinsics/" + master_seris + '_' + str(
               _w) + 'x' + str(_h) + ".yml"
   with open(intr_file, 'r') as f_c:
     intr = yaml.load(f_c, Loader=yaml.FullLoader)
@@ -141,14 +151,18 @@ def kk_load_data(src):
     mano_calib = yaml.load(f, Loader=yaml.FullLoader)
   #-----
   frame = int(os.path.basename(_name_frame).split('_')[0])
-  d_path = os.path.join(_name, _serials[seris_num])
+  d_path = os.path.join(_name, master_seris)
   sample['color_file'] =  os.path.join(d_path, _color_format.format(frame))
-  sample['label_file'] = os.path.join(d_path, _label_format.format(frame))
+  sample['label_file'] = os.path.join(d_path, _label_format.format(frame)) #得选主相机！
   sample['intrinsics'] =  {'fx': fx, 'fy': fy, 'ppx': cx, 'ppy': cy}
   sample['ycb_ids'] = _ycb_ids
   sample['mano_side'] = _mano_sides[0]
   sample['mano_betas'] = mano_calib['betas']
   sample['ycb_grasp_ind'] = _ycb_grasp_ind
+  # import pdb 
+  # pdb.set_trace()
+
+
 
   return sample,dataset
   
