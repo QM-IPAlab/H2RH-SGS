@@ -599,4 +599,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args.mode, args.txt_path, args.save_txt_path, args.test_image_path, args.evaluate_txt_path, args.model_path, args.test_traj_path,args.next_pose_path,args.hand_ply_file,args.obj_ply_file,args.mask_dir,args.object_mask_img_file,args.hand_mask_file)
+    main(args.mode, args.txt_path, args.save_txt_path, args.test_image_path, args.evaluate_txt_path, args.model_path, args.test_traj_path,args.next_pose_path,args.hand_ply_file,args.obj_ply_file,args.mask_dir,args.object_mask_file,args.hand_mask_file)
