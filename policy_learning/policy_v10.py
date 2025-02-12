@@ -2,6 +2,11 @@
 # 加入hand object掩码。hand mask:1,h,w object mask:1 h w. 更改
 # loss归一化 并分开计算旋转与平移
 # 输出中加入是否是pre grasp的分类标签
+# 增强class=1的学习
+# 
+# fn_weight=200：现在设置的pre grasp class中，fn的loss的weight是fn_weight=200
+# Ltrans Lrot Lclass: 50:50:1 保持数值大概一致
+# 靠近grasp的前2帧，pre class设置为0.5
 import os
 import numpy as np
 import torch
@@ -20,6 +25,9 @@ from generate_mask import get_mask
 import argparse
 import torch
 import torchvision.transforms as transforms
+global_threshold = 0.9
+score = 200 #ltrans:Lclass
+fn_weight = 50
 
 class FiveChannelTransform:
     def __init__(self):
@@ -126,11 +134,10 @@ class CustomDataset(Dataset):
                             pre_grasp_class = 1.0
                         else:
                             next_traj_path = os.path.join(traj_folder, traj_files[i + 1])
-                            pre_grasp_class = 0.0
+                            # pre_grasp_class = 0.0
                             # print(f'{traj_folder} {traj_files[i + 1]} {img_files[i + 1]}')
-                           
-                        
-                        
+                            pre_grasp_class = (float(i/len(img_files)))*global_threshold #before pregrasp， class score for pose <0.9
+                                                 
                         hand_img, object_img = get_mask(os.path.join(traj_folder, traj_files[i]), hand_ply_file, obj_ply_file,mask_dir)
 
                         self.data.append({
@@ -235,19 +242,28 @@ class PoseEstimationModel(nn.Module):
         pose = output[:, :6]  # 前6维是 欧拉角 + 位移
         pre_grasp = output[:, 6] # 最后一维是分类概率（是否是 pre-grasp）
         # pre_grasp =torch.sigmoid(pre_grasp)
-        # print(pose.dtype, pre_grasp.dtype)/
+        # print(pose.dtype, pre_grasp.dtype)
         return pose, pre_grasp
+
+def custom_bce_loss(pred, target):
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(pred, target, reduction='none')
+    fn_mask = (target == 1) & (pred < global_threshold)  # 找到 FN（目标=1 但预测<0.5）
+    loss[fn_mask] *= fn_weight  # 对 FN 处的 loss 进行放大
+    return loss.mean()
 
 class PoseLoss(nn.Module):
     def __init__(self):
         super(PoseLoss, self).__init__()
         self.mse_loss = nn.MSELoss()
-        self.bce_loss = torch.nn.BCEWithLogitsLoss()
+        # pos_weight_value = 100 
+        # # class 0 / class 1
+        # pos_weight = torch.tensor([pos_weight_value], device="cuda") 
+        # self.bce_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         # self.bce_loss = torch.nn.BCELoss()
     
     def forward(self, pred_pose, pred_class, target_pose, target_class):
         # 预测值和真实值的分离（3个旋转 + 3个平移）
-        score = 5
+        
         pred_rot, pred_trans = pred_pose[:, :3], pred_pose[:, 3:]
         target_rot, target_trans = target_pose[:, :3], target_pose[:, 3:]
         
@@ -265,14 +281,14 @@ class PoseLoss(nn.Module):
         trans_loss = self.mse_loss(pred_trans, target_trans)
 
         # print(pred_class.dtype,target_class.dtype)
-        class_loss = self.bce_loss(pred_class, target_class)
+        class_loss = custom_bce_loss(pred_class, target_class)
         
         # 总损失 = 旋转损失 + 位移损失
-        total_loss = score *rot_loss + trans_loss + class_loss
+        total_loss = score *rot_loss + score*trans_loss + class_loss
         return total_loss, rot_loss, trans_loss, class_loss
 
 # Training and evaluation function with mixed precision
-def train_and_evaluate(model, train_dataloader, test_dataloader, criterion, optimizer, epochs=10, device='cuda'):
+def train_and_evaluate(model, train_dataloader, test_dataloader, criterion, optimizer, epochs=10, device='cuda',model_path='./best_pose_estimation_model_v10_0209.pth'):
     model.to(device)
     best_test_loss = float('inf')
     scaler = GradScaler()
@@ -321,7 +337,7 @@ def train_and_evaluate(model, train_dataloader, test_dataloader, criterion, opti
 
         if avg_total_test_loss < best_test_loss:
             best_test_loss = avg_total_test_loss
-            torch.save(model.state_dict(), "best_pose_estimation_model.pth")
+            torch.save(model.state_dict(), model_path)
             print("Saved best model!")
     
     # Plot loss curves
@@ -358,7 +374,7 @@ def evaluate(model, test_dataloader, criterion, device='cuda',mode='train'):
             imgs, poses, labels = imgs.to(device), poses.to(device), labels.to(device)
             pred_pose, pred_class = model(imgs)
             # Append ground truth and predicted values
-            print(pred_class.dtype,labels)
+            # print(pred_class.dtype,labels)
             loss, rot_loss, trans_loss, class_loss = criterion(pred_pose, pred_class, poses, labels)
 
             test_total_loss += loss.item()
@@ -372,7 +388,8 @@ def evaluate(model, test_dataloader, criterion, device='cuda',mode='train'):
             pred_trans_poses.append(pred_pose[:, 3:].cpu().numpy())
             gt_label.append(labels.cpu().numpy())
             pred_class_ = torch.sigmoid(pred_class)
-            pred_class_ = (pred_class_ > 0.5).float()
+            print(f'pred_class_: {pred_class_}\n labels:{labels}\n')
+            pred_class_ = (pred_class_ > global_threshold).float()
             predict_label.append(pred_class_.cpu().numpy())
         
     avg_total_test_loss = test_total_loss / len(test_dataloader)
@@ -387,7 +404,7 @@ def evaluate(model, test_dataloader, criterion, device='cuda',mode='train'):
     gt_label = np.concatenate(gt_label, axis=0)
     predict_label = np.concatenate(predict_label, axis=0)
 
-    print(f" Total Loss: {avg_total_test_loss:.4f}, Rot loss:{avg_rot_test_loss:.4f}, Trans Loss: {avg_trans_test_loss:.4f}, Test loss: {avg_test_class_loss:.4f}")
+    print(f" Total Loss: {avg_total_test_loss:.4f}, Rot loss:{avg_rot_test_loss:.4f}, Trans Loss: {avg_trans_test_loss:.4f}, class loss: {avg_test_class_loss:.4f}")
     if mode == 'train':
         return avg_total_test_loss,avg_rot_test_loss,avg_trans_test_loss,avg_test_class_loss
     if mode == 'evaluate':
@@ -416,13 +433,14 @@ def test_pose(image_path, traj_path, model, transform, next_pose_path,hand_ply_f
     img_transformed = transform(img, hand_mask, object_mask)
 
     img_transformed = img_transformed.unsqueeze(0).to(device)
-    print(f'when test {img_transformed}')
+    # print(f'when test {img_transformed}')
 
     with torch.no_grad():
         pred_pose, pred_class = model(img_transformed)  # 预测的 6 维姿态 (3 旋转 + 3 平移)
     
     pred_class = torch.sigmoid(pred_class)
-    pred_class = (pred_class > 0.5).float()
+    print(f'pred_class: {pred_class}')
+    pred_class = (pred_class > global_threshold).float()
     
 
     predicted_euler_angles = pred_pose[0, :3].cpu().numpy()  # 旋转部分
@@ -508,7 +526,11 @@ def evaluate_only(model, txt_path, transform, criterion, device='cuda'):
 
 # Main function to load data, create dataloaders, and start training
 def main(mode, txt_path, save_txt_path, test_image_path, evaluate_txt_path, model_path, test_traj_path, next_pose_path,hand_ply_file,obj_ply_file,mask_dir):
-    
+    model = PoseEstimationModel()
+    # Multi-GPU support
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs!")
+        model = DataParallel(model)  # Enable multi-GPU support
 
     transform = transforms.Compose([
         # transforms.Resize((224, 224)),
@@ -519,32 +541,32 @@ def main(mode, txt_path, save_txt_path, test_image_path, evaluate_txt_path, mode
     # 实例化 transform
     five_channel_transform = FiveChannelTransform()
 
-    dataset = CustomDataset(txt_path, transform=five_channel_transform, save_txt_path=save_txt_path)
-    train_data, test_data = train_test_split(dataset.data, test_size=0.2, random_state=42)
+    
 
     
-    train_dataset = PoseDataset(train_data, transform=five_channel_transform)
-    test_dataset = PoseDataset(test_data, transform=five_channel_transform)
-
-    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, pin_memory=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4, pin_memory=True)
-
-    model = PoseEstimationModel()
     criterion  = PoseLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    # Multi-GPU support
-    if torch.cuda.device_count() > 1:
-        print(f"Using {torch.cuda.device_count()} GPUs!")
-        model = DataParallel(model)  # Enable multi-GPU support
+   
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if mode == 'train':
-        train_and_evaluate(model, train_dataloader, test_dataloader, criterion, optimizer, epochs=20, device=device)
+        dataset = CustomDataset(txt_path, transform=five_channel_transform, save_txt_path=save_txt_path)
+        train_data, test_data = train_test_split(dataset.data, test_size=0.2, random_state=42)
+
+        
+        train_dataset = PoseDataset(train_data, transform=five_channel_transform)
+        test_dataset = PoseDataset(test_data, transform=five_channel_transform)
+
+        train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4, pin_memory=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4, pin_memory=True)
+        
+        train_and_evaluate(model, train_dataloader, test_dataloader, criterion, optimizer, epochs=20, device=device,model_path = model_path)
 
     elif mode == 'test':
         model = load_model(model_path, device='cuda')
+       
         predicted_pose = test_pose(test_image_path, test_traj_path, model, five_channel_transform,next_pose_path,hand_ply_file,obj_ply_file,mask_dir)
         print(f'next pose: {predicted_pose}')
 
@@ -564,7 +586,7 @@ if __name__ == "__main__":
     parser.add_argument('--txt_path', type=str, default="/home/e/eez095/project/policy_learning/dataset.txt", help="Path to the input dataset text file")
     parser.add_argument('--save_txt_path', type=str, default="/home/e/eez095/project/policy_learning/getitem_data.txt", help="to check what is inside the dataset")
     test_image_path = "/home/e/eez095/dexycb_data/20200813-subject-02/20200813_145341/59_frame/FSGS_output/video/ours_10000/12/12_4.png"
-    parser.add_argument('--model_path', type=str, default="./best_pose_estimation_model.pth", help="Path to the pre-trained model file")
+    parser.add_argument('--model_path', type=str, default="./best_pose_estimation_model_v10_0209.pth", help="Path to the pre-trained model file")
     parser.add_argument('--test_image_path', type=str, help="Path to the test image")
     parser.add_argument('--evaluate_txt_path', type=str, default="/home/e/eez095/project/policy_learning/dataset_evaluate.txt", help="Path to the evaluation dataset text file")
     parser.add_argument('--test_traj_path',type=str,help='test image trajectory')
