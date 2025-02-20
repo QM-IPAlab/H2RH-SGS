@@ -6,7 +6,7 @@
 # 
 # fn_weight=200：现在设置的pre grasp class中，fn的loss的weight是fn_weight=200
 # Ltrans Lrot Lclass: 50:50:1 保持数值大概一致
-# 靠近grasp的前2帧，pre class设置为0.5
+# class是线性增长
 # when test, input is mask image
 import os
 import numpy as np
